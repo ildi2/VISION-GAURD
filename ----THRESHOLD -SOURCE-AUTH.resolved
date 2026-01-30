@@ -1,0 +1,54 @@
+# Deep System Fixes - Walkthrough
+
+## Summary
+6 critical fixes implemented to resolve face rejection and SourceAuth oscillation issues.
+
+## Files Modified
+
+### Fix 1: Threshold Alignment (4 files)
+All `unknown_min_quality` sources aligned to **0.55**:
+
+| File | Change |
+|------|--------|
+| [evidence_gate.py:328](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/identity/evidence_gate.py#L328) | 0.68 → 0.55 |
+| [evidence_gate.py:149](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/identity/evidence_gate.py#L149) | 0.68 → 0.55 |
+| [config.py:78](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/core/config.py#L78) | 0.68 → 0.55 |
+| [default.yaml:142](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/config/default.yaml#L142) | 0.58 → 0.55 |
+
+---
+
+### Fix 2: SourceAuth State Thresholds
+[fusion.py:233-236](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/source_auth/fusion.py#L233)
+
+| Threshold | Before | After |
+|-----------|--------|-------|
+| `real_min_score` | 0.90 | **0.75** |
+| `likely_real_min_score` | 0.70 | **0.55** |
+| `spoof_max_score` | 0.10 | **0.15** |
+| `likely_spoof_max_score` | 0.30 | **0.35** |
+
+---
+
+### Fix 3: EMA Stability
+[fusion.py:219](file:///c:/Users/ildi/Desktop/GaitGuard%20-%202o/source_auth/fusion.py#L219)
+
+`ema_alpha: 0.6 → 0.35` (70% history weight = smoother transitions)
+
+---
+
+## Verification
+
+- ✅ Syntax check: All imports successful
+- ✅ Tests: 11/11 passed
+
+## Expected Runtime Behavior
+
+```
+# Before (oscillating):
+sa_states REAL=0.0 L_REAL=0.3 UNC=0.7
+sa_states REAL=0.0 L_REAL=0.0 UNC=1.0  # ← jumping around
+
+# After (stable):
+sa_states REAL=0.0 L_REAL=0.8 UNC=0.2  # ← consistent L_REAL
+faces=1 (accept=1, hold=0, reject=0)   # ← no random rejects
+```

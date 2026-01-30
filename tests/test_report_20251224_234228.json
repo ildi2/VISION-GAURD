@@ -1,0 +1,65 @@
+{
+  "start_time": "2025-12-24 23:42:28.878797",
+  "end_time": "2025-12-24 23:43:03.615816",
+  "total_passed": 0,
+  "total_failed": 0,
+  "total_skipped": 0,
+  "suites": {
+    "PHASE A: Config Governance": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "PHASE B: Evidence Gating": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "PHASE C: Binding State Machine": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "PHASE D: Scheduler": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "PHASE E: Merge Manager": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "END-TO-END: Integration Tests": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    },
+    "PERFORMANCE: Load Tests": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 1
+    },
+    "STRESS: Edge Cases": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "status": "PASS",
+      "return_code": 0
+    }
+  }
+}
