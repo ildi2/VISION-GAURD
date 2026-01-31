@@ -299,13 +299,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📧 Contact
-
-**Author**: Marildo C.  
-**GitHub**: [@marildoC](https://github.com/marildoC)
-
----
-
 <p align="center">
   <b>GaitGuard - Continuous Identity, Uninterrupted Security</b>
 </p>
