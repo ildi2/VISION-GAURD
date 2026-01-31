@@ -172,11 +172,15 @@ class IdentityEngineMultiView(IdentityEngineBase):
         mv_cfg: Optional[MultiViewConfig] = None,
         mv_gallery: Optional[MultiViewGalleryView] = None,
         matcher: Optional[MultiViewMatcher] = None,
+        governance_cfg: Optional[Any] = None,  # FIX: Accept governance config for binding manager
     ) -> None:
         super().__init__()
 
         # Explicit engine mode tag (used by overlay / logs).
         self.identity_mode: str = "multiview"
+
+        # FIX: Store governance config for binding manager initialization
+        self._governance_cfg = governance_cfg
 
         # FaceConfig: re-use global default if not provided so all thresholds
         # match the classic face route + gallery.
@@ -347,9 +351,16 @@ class IdentityEngineMultiView(IdentityEngineBase):
         self.binding_enabled = True  # Store as instance variable for use in decide()
         binding_cfg = None
         try:
-            if hasattr(self._face_cfg, 'governance') and hasattr(self._face_cfg.governance, 'binding'):
+            # FIX: First try passed governance_cfg (from main_loop)
+            if self._governance_cfg is not None and hasattr(self._governance_cfg, 'binding'):
+                binding_cfg = self._governance_cfg.binding
+                self.binding_enabled = getattr(binding_cfg, 'enabled', True)
+                logger.debug("IdentityEngineMultiView: Using passed governance_cfg.binding")
+            # Fallback: try face_cfg.governance (legacy path)
+            elif hasattr(self._face_cfg, 'governance') and hasattr(self._face_cfg.governance, 'binding'):
                 binding_cfg = self._face_cfg.governance.binding
                 self.binding_enabled = getattr(binding_cfg, 'enabled', True)
+                logger.debug("IdentityEngineMultiView: Using face_cfg.governance.binding")
         except Exception as e:
             logger.warning(f"Could not read binding config: {e}")
         

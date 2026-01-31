@@ -65,14 +65,20 @@ class OCSortConfig:
     - max_age:       how many frames a track can be unseen before being dropped
     - min_hits:      how many hits are required before a track is considered confirmed
     - iou_threshold: minimum IoU for matching detections to existing tracks
+                     Lower value = more tolerant of fast movement (less track fragmentation)
+                     Higher value = stricter matching (more track ID switches)
     - appearance_lambda: weight in [0,1] to combine IoU with appearance similarity
                          0.0 → IoU only; 0.5 → equal weight
     - ema_alpha:     EMA coefficient for updating appearance embeddings
+    
+    ROBUSTNESS TUNING (for fast movement tolerance):
+    - iou_threshold: Lowered from 0.3 to 0.2 for better tracking during fast motion
+    - appearance_lambda: Increased from 0.3 to 0.4 to rely more on appearance when IoU is low
     """
     max_age: int = 30
     min_hits: int = 3
-    iou_threshold: float = 0.3
-    appearance_lambda: float = 0.3
+    iou_threshold: float = 0.2  # ROBUST: Lowered for fast movement tolerance (was 0.3)
+    appearance_lambda: float = 0.4  # ROBUST: Increased for appearance-based matching (was 0.3)
     ema_alpha: float = 0.7
 
 

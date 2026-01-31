@@ -1,0 +1,71 @@
+# scripts/rollout/stage1_shadow.yaml
+# PHASE 9 - STAGE 1: Shadow Mode (Week 1)
+# Enable continuity in shadow mode for observation and threshold tuning
+# Duration: 1 week
+# Risk: Zero (observe-only, no identity mutations)
+
+chimeric:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  # STAGE 1: Shadow mode - observe continuity behavior without mutations
+  mode: "shadow_continuity"  # Shadow mode (observe-only)
+  
+  continuity:
+    # Shadow mode flag (CRITICAL: prevents all mutations)
+    shadow_mode: true
+    
+    # Shadow metrics logging (more frequent for tuning)
+    shadow_metrics_log_interval_sec: 10  # Log every 10 seconds (vs 30 in production)
+    
+    # ============================================================
+    # GUARD 1: Track Stability
+    # ============================================================
+    min_track_age_frames: 10  # Production default
+    
+    # ============================================================
+    # GUARD 2c: Track Health
+    # ============================================================
+    min_track_confidence: 0.3
+    max_lost_frames: 5
+    
+    # ============================================================
+    # GUARD 2: Appearance Consistency
+    # ============================================================
+    appearance_distance_threshold: 0.35  # Production default
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    # ============================================================
+    # GUARD 2b: BBox Stability
+    # ============================================================
+    max_bbox_displacement_fraction: 0.25  # Production default
+    max_bbox_displacement_px: 600
+    bbox_iou_threshold: 0.3
+    
+    # ============================================================
+    # GUARD 3: Face Consistency
+    # ============================================================
+    max_face_contradiction_count: 3  # Production default
+    
+    # ============================================================
+    # GRACE REATTACHMENT (disabled in Stage 1)
+    # ============================================================
+    grace_window_seconds: 1.0  # Configured but observed only
+    grace_bbox_displacement_fraction: 0.25
+
+# Monitoring objectives for Stage 1:
+# 1. Collect baseline metrics:
+#    - Carry rate (what % of frames would use GPS carry)
+#    - Guard break distribution (which guards fail most often)
+#    - Appearance distance distribution (typical values)
+#    - BBox displacement distribution (movement patterns)
+#
+# 2. Tune thresholds based on observations:
+#    - If appearance_distance_threshold too strict → many false breaks
+#    - If too loose → risk of wrong carries (validate with manual review)
+#    - Adjust based on environment (indoor vs outdoor, lighting, crowd density)
+#
+# 3. Success criteria:
+#    - No crashes or exceptions
+#    - Shadow metrics log confirms continuity logic runs
+#    - Threshold tuning complete (ready for Stage 2)

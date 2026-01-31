@@ -1,0 +1,77 @@
+# scripts/rollout/stage4_grace.yaml
+# PHASE 9 - STAGE 4: Enable Grace Reattachment (Week 4)
+# Enable grace reattachment for brief signal loss recovery
+# Duration: 1 week
+# Risk: Medium (new feature, monitor for false reattachments)
+
+chimeric:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  # STAGE 4: Full continuity with grace reattachment
+  mode: "continuity"  # REAL MODE (GPS carry + grace enabled)
+  
+  continuity:
+    # Real mode
+    shadow_mode: false
+    
+    # Metrics logging (normal frequency)
+    shadow_metrics_log_interval_sec: 30
+    
+    # ============================================================
+    # GUARD 1: Track Stability (PRODUCTION)
+    # ============================================================
+    min_track_age_frames: 10  # Production target
+    
+    # ============================================================
+    # GUARD 2c: Track Health (PRODUCTION)
+    # ============================================================
+    min_track_confidence: 0.3  # Production target
+    max_lost_frames: 5  # Production target
+    
+    # ============================================================
+    # GUARD 2: Appearance Consistency (PRODUCTION)
+    # ============================================================
+    appearance_distance_threshold: 0.35  # Production target
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    # ============================================================
+    # GUARD 2b: BBox Stability (PRODUCTION)
+    # ============================================================
+    max_bbox_displacement_fraction: 0.25  # Production target
+    max_bbox_displacement_px: 600  # Production target
+    bbox_iou_threshold: 0.3  # Production target
+    
+    # ============================================================
+    # GUARD 3: Face Consistency (PRODUCTION)
+    # ============================================================
+    max_face_contradiction_count: 3  # Production target
+    
+    # ============================================================
+    # GRACE REATTACHMENT (ENABLED in Stage 4)
+    # ============================================================
+    grace_window_seconds: 1.0  # ENABLED (1 second window)
+    grace_bbox_displacement_fraction: 0.25  # Same as Guard 2b
+    # Rationale: Allow 1-second window for person to re-enter frame with new track_id
+    # Grace candidates must pass embedding similarity + bbox proximity checks
+
+# Monitoring objectives for Stage 4:
+# 1. Validate grace reattachment:
+#    - Reattachment success rate ≥80% (of brief exits)
+#    - False reattachment rate <1% (wrong person reattached)
+#    - Grace pool size stable (not growing unbounded)
+#
+# 2. Track grace pool behavior:
+#    - Average grace pool size (how many lost tracks waiting)
+#    - Grace expiry rate (how often memories expire)
+#    - Grace reuse rate (how often same original_track_id reattached)
+#
+# 3. Compare with Stage 3 (no grace):
+#    - Identity persistence increase (expected from reattachment)
+#    - System stability maintained (no new errors)
+#
+# 4. Success criteria:
+#    - Grace reattachment working correctly (≥80% success)
+#    - No false reattachments (wrong person)
+#    - System stable for 1 week continuous operation
+#    - Ready for full production (Stage 5)

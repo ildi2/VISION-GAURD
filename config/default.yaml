@@ -11,6 +11,20 @@ paths:
   logs_dir: "logs"
   evidence_dir: "evidence"
 
+# ============================================================================
+# TRACKER CONFIGURATION (OC-SORT)
+# ============================================================================
+# Controls how the tracker handles fast movement and track fragmentation.
+# Lower iou_threshold = more tolerant of fast movement (less [U] flicker)
+# Higher appearance_lambda = rely more on appearance when IoU is low
+# ============================================================================
+tracker:
+  max_age: 30                  # Frames before dropping lost track
+  min_hits: 3                  # Hits required to confirm track
+  iou_threshold: 0.2           # ROBUST: Lowered for fast movement (default: 0.3)
+  appearance_lambda: 0.4       # ROBUST: More appearance weight (default: 0.3)
+  ema_alpha: 0.7               # EMA for appearance embedding updates
+
 runtime:
   use_gpu: true            # prefer GPU if available 
   save_evidence: false     # save cropped evidence frames (future use)
@@ -389,3 +403,62 @@ governance:
     # Telemetry output
     emit_metrics_every_sec: 1.0           # Emit governance metrics every N seconds
     log_level: "INFO"                     # INFO, DEBUG, TRACE
+
+# ============================================================================
+# CHIMERIC IDENTITY CONTINUITY MODE (TOP-LEVEL)
+# ============================================================================
+# GPS-like identity persistence: face assigns identity, tracking carries it.
+# This must be at TOP LEVEL (not inside governance) for config parsing.
+# ============================================================================
+
+chimeric:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  # Operating mode:
+  # - "classic": Disabled (identity engine only, no continuity)
+  # - "shadow_continuity": Shadow mode (observe-only, no mutations, diagnostics)
+  # - "continuity": Real mode (full GPS-like carry, production behavior)
+  mode: "continuity"
+  
+  continuity:
+    # ============================================================
+    # GUARD 1: Track Stability (prevent carrying just-appeared tracks)
+    # ============================================================
+    min_track_age_frames: 10           # Minimum track age before allowing carry
+    
+    # ============================================================
+    # GUARD 2c: Track Health (detect weak/lost tracks)
+    # ============================================================
+    min_track_confidence: 0.3          # Minimum tracker confidence (0-1)
+    max_lost_frames: 5                 # Maximum consecutive lost frames
+    
+    # ============================================================
+    # GUARD 2: Appearance Consistency (detect ID switches)
+    # ============================================================
+    appearance_distance_threshold: 0.35    # Max cosine distance (L2-normalized embeddings)
+    appearance_safe_zone_frames: 30        # Frames before EMA learning starts
+    appearance_ema_alpha: 0.1              # EMA smoothing factor (0=no update, 1=replace)
+    
+    # ============================================================
+    # GUARD 2b: BBox Stability (detect teleportation)
+    # ============================================================
+    max_bbox_displacement_fraction: 0.25   # Fraction of frame diagonal (resolution-aware)
+    max_bbox_displacement_px: 600          # Fallback absolute threshold (pixels)
+    bbox_iou_threshold: 0.3                # Minimum IoU for large movements (dual guard)
+    
+    # ============================================================
+    # GUARD 3: Face Consistency (detect face contradictions)
+    # ============================================================
+    max_face_contradiction_count: 3        # Allow N contradictions before breaking
+    
+    # ============================================================
+    # GRACE REATTACHMENT (brief signal loss recovery)
+    # ============================================================
+    grace_window_seconds: 1.0              # Time window for reattachment (seconds)
+    grace_bbox_displacement_fraction: 0.25 # Bbox proximity for candidates (same as Guard 2b)
+    
+    # ============================================================
+    # SHADOW MODE (diagnostics)
+    # ============================================================
+    shadow_mode: false                     # When true: annotate extra dict, don't mutate identity_id
+    shadow_metrics_log_interval_sec: 30    # Log shadow metrics every N seconds

@@ -132,13 +132,15 @@ def run() -> None:
 
     if identity_mode_requested == "multiview" and multiview_available:
         # Pure 3D / multiview mode.
-        identity_primary = IdentityEngineMultiView()  # type: ignore[call-arg]
+        # FIX: Pass governance config for binding manager initialization
+        identity_primary = IdentityEngineMultiView(governance_cfg=cfg.governance)  # type: ignore[call-arg]
         identity_mode_active = "multiview"
         log.info("Identity engine: multiview only (pseudo-3D, Wave-3)")
     elif identity_mode_requested == "hybrid" and multiview_available:
         # Hybrid: run multiview as the primary engine and classic in parallel
         # for comparison / safety. Overlay and alerts use primary decisions.
-        identity_primary = IdentityEngineMultiView()  # type: ignore[call-arg]
+        # FIX: Pass governance config for binding manager initialization
+        identity_primary = IdentityEngineMultiView(governance_cfg=cfg.governance)  # type: ignore[call-arg]
         identity_secondary = FaceIdentityEngine()
         identity_mode_active = "hybrid"
         log.info(
@@ -204,7 +206,7 @@ def run() -> None:
             source_auth_enabled = bool(getattr(sa_config, 'enabled', True))
     except (AttributeError, TypeError, ValueError) as e:
         # If config reading fails, default to enabled for backward compatibility
-        logger.warning(f"Could not read source_auth config: {e}; defaulting to enabled")
+        log.warning(f"Could not read source_auth config: {e}; defaulting to enabled")
         source_auth_enabled = True
     
     if source_auth_enabled and SourceAuthEngine is not None and default_source_auth_config is not None:
@@ -225,6 +227,51 @@ def run() -> None:
             source_auth_engine = None
     elif not source_auth_enabled:
         log.info("SourceAuth engine disabled via governance.source_auth.enabled=false")
+
+    # ---- Chimeric Continuity Binder (GPS-like identity persistence) ----
+    continuity_binder = None
+    continuity_mode = "classic"
+    
+    if hasattr(cfg, "chimeric"):
+        try:
+            chimeric_mode = getattr(cfg.chimeric, "mode", "classic")
+            if isinstance(chimeric_mode, str):
+                chimeric_mode = chimeric_mode.strip().lower()
+            
+            if chimeric_mode in ("continuity", "shadow_continuity"):
+                from identity.continuity_binder import ContinuityBinder
+                
+                # Instantiate binder with chimeric config
+                continuity_binder = ContinuityBinder(cfg.chimeric)
+                continuity_mode = chimeric_mode
+                
+                # CRITICAL: Set frame dimensions for resolution-aware thresholds
+                # Extract from camera config (fallback to defaults if missing)
+                frame_width = getattr(cfg.camera, 'width', 640)
+                frame_height = getattr(cfg.camera, 'height', 480)
+                continuity_binder.set_frame_dimensions(frame_width, frame_height)
+                
+                # Determine shadow mode status
+                shadow_status = "shadow mode (observe-only)" if chimeric_mode == "shadow_continuity" else "real mode (GPS carry)"
+                
+                log.info(
+                    "Continuity binder initialized | mode=%s | %s | frame=%dx%d | "
+                    "min_age=%d | appearance_thresh=%.2f | bbox_frac=%.2f",
+                    chimeric_mode,
+                    shadow_status,
+                    frame_width,
+                    frame_height,
+                    continuity_binder.min_track_age_frames,
+                    continuity_binder.appearance_distance_threshold,
+                    continuity_binder.max_bbox_displacement_frac  # FIX: Correct attribute name
+                )
+        except Exception:
+            log.exception(
+                "Failed to initialize continuity binder; continuing without continuity mode"
+            )
+            continuity_binder = None
+    else:
+        log.debug("Chimeric continuity mode disabled (no chimeric config section)")
 
     # ---- Phase D: FPS/Load-Aware Scheduler ----
     scheduler = None
@@ -341,6 +388,10 @@ def run() -> None:
     hybrid_agree = 0
     hybrid_total = 0
     
+    # Phase 6: Track id_sources from previous frame for scheduler priority awareness
+    # Scheduler uses prev frame's id_sources to optimize current frame's face processing
+    prev_frame_id_sources = {}
+    
     # NEW (Phase A): Governance metrics collection
     governance_enabled = bool(getattr(cfg, "governance", {}).enabled if hasattr(cfg, "governance") else False)
     metrics_collector = None
@@ -399,12 +450,13 @@ def run() -> None:
                         # Hybrid: use primary engine for binding state
                         binding_states = getattr(identity_primary, "get_binding_states", lambda: {})()
                     
-                    # Compute schedule
+                    # Compute schedule (Phase 6: use prev frame's id_sources)
                     schedule_context = scheduler.compute_schedule(
                         track_ids=list(t.track_id for t in tracks) if tracks else [],
                         binding_states=binding_states,
                         current_ts=ts,
                         actual_fps=actual_fps,
+                        id_sources=prev_frame_id_sources,
                     )
                 except Exception:
                     log.exception("Failed to compute scheduler context; continuing without scheduling")
@@ -472,6 +524,63 @@ def run() -> None:
                 except Exception:
                     # Never let diagnostics crash the main loop.
                     log.exception("Hybrid diagnostics failed")
+
+            # 2a) CONTINUITY BINDER (Chimeric Mode - GPS-like identity persistence)
+            # Placed after identity engine, before SourceAuth (policy layer position)
+            if continuity_binder is not None:
+                try:
+                    # CRITICAL FIX: Populate track.embedding AND track.has_face_this_frame
+                    # The continuity binder needs:
+                    # 1. embedding: For appearance consistency guard (EMA comparison)
+                    # 2. has_face_this_frame: To know if face is actively visible THIS frame
+                    #
+                    # IMPORTANT: has_face_this_frame must be set EVERY frame, defaulting to False.
+                    # This is the KEY signal for distinguishing [F] from [G].
+                    
+                    if signals_active is not None:
+                        signals_by_track = {int(s.track_id): s for s in signals_active if s is not None}
+                    else:
+                        signals_by_track = {}
+                    
+                    for trk in tracks:
+                        try:
+                            sig = signals_by_track.get(trk.track_id)
+                            
+                            # CRITICAL: Default to no face this frame
+                            trk.has_face_this_frame = False
+                            
+                            if sig is not None and sig.best_face is not None:
+                                # Face detected this frame
+                                trk.has_face_this_frame = True
+                                
+                                # Also populate embedding for appearance guard
+                                if sig.best_face.embedding is not None:
+                                    trk.embedding = np.asarray(sig.best_face.embedding, dtype=np.float32).reshape(-1)
+                        except Exception:
+                            # Never crash on signal processing failure
+                            trk.has_face_this_frame = False
+                    
+                    decisions = continuity_binder.apply(ts, tracks, decisions)
+                    # In shadow mode: decisions annotated with extra['would_carry'] (no mutations)
+                    # In real mode: decisions.identity_id carried from memory (GPS-like continuity)
+                except Exception:
+                    # Continuity must never crash pipeline (fail-closed: skip carry on error)
+                    log.exception("Continuity binder failed; continuing with original decisions")
+            
+            # Phase 6: Extract id_sources for scheduler priority awareness
+            # Build dict mapping track_id → id_source ("F"=face, "G"=GPS, "U"=unknown)
+            id_sources = {}
+            for dec in decisions:
+                # Get id_source (schema field or extra dict fallback)
+                source = "U"  # Default
+                if hasattr(dec, 'id_source') and dec.id_source is not None:
+                    source = dec.id_source
+                elif dec.extra and 'id_source' in dec.extra:
+                    source = dec.extra['id_source']
+                id_sources[dec.track_id] = source
+            
+            # Store for next frame's scheduler
+            prev_frame_id_sources = id_sources
 
             # 2b) SourceAuth: annotate decisions with source authenticity
             if source_auth_engine is not None and signals_active is not None:

@@ -130,6 +130,7 @@ class FaceScheduler:
         binding_states: Dict[int, str],
         current_ts: float,
         actual_fps: float,
+        id_sources: Optional[Dict[int, str]] = None,
     ) -> ScheduleContext:
         """
         Compute which tracks to schedule for face processing this frame.
@@ -139,6 +140,9 @@ class FaceScheduler:
             binding_states: Dict mapping track_id → binding state
             current_ts: Current timestamp
             actual_fps: Measured FPS from main loop
+            id_sources: Dict mapping track_id → id_source ("F"=face, "G"=GPS, "U"=unknown)
+                       Used to differentiate GPS-carried tracks from truly unknown tracks.
+                       Optional for backwards compatibility (defaults to "U" if not provided).
         
         Returns:
             ScheduleContext with scheduled track IDs and budget info
@@ -147,6 +151,11 @@ class FaceScheduler:
             - Always schedules at least 1 track
             - Never returns empty list unless input is empty
             - Ensures fair scheduling over time
+        
+        Phase 6 Enhancement:
+            - GPS-carried tracks (binding_state="UNKNOWN" + id_source="G") get medium priority
+            - Truly unknown tracks (binding_state="UNKNOWN" + id_source="U") get high priority
+            - This optimizes face refresh (don't over-process GPS-carried identities)
         """
         if not self.config.enabled:
             # Bypass: schedule all tracks
@@ -172,9 +181,9 @@ class FaceScheduler:
         # Compute budget for this frame
         budget = self._compute_budget(len(track_ids), actual_fps)
         
-        # Score all tracks by priority
+        # Score all tracks by priority (Phase 6: pass id_sources)
         priority_scores = self._compute_priority_scores(
-            track_ids, binding_states, current_ts
+            track_ids, binding_states, current_ts, id_sources
         )
         
         # Select top K tracks
@@ -253,25 +262,40 @@ class FaceScheduler:
         track_ids: List[int],
         binding_states: Dict[int, str],
         current_ts: float,
+        id_sources: Optional[Dict[int, str]] = None,
     ) -> Dict:
         """
         Compute priority score for each track.
         
         Score factors:
         1. Binding state (PENDING > UNKNOWN > CONFIRMED_WEAK > CONFIRMED_STRONG)
-        2. Time since last check (older = higher priority)
-        3. Recent state changes (transitions get boost)
+        2. ID source for UNKNOWN state (truly unknown > GPS-carried)
+        3. Time since last check (older = higher priority)
+        4. Recent state changes (transitions get boost)
+        
+        Phase 6 Enhancement:
+            - binding_state="UNKNOWN" + id_source="G" → medium priority (20.0)
+            - binding_state="UNKNOWN" + id_source="U" → high priority (50.0)
         """
         scores = {}
         state_counts = {}
         
         for track_id in track_ids:
             binding_state = binding_states.get(track_id, "UNKNOWN")
+            id_source = id_sources.get(track_id, "U") if id_sources else "U"
             track_state = self.track_states[track_id]
             
-            # State priority
+            # State priority with Phase 6 GPS-carry awareness
             if binding_state == "UNKNOWN":
-                state_score = self.config.priority_weight_unknown
+                if id_source == "G":
+                    # GPS-carried: has identity from memory, refresh periodically
+                    state_score = self.config.priority_weight_confirmed_weak  # 20.0
+                    logger.debug(
+                        f"Track {track_id}: GPS-carried (UNKNOWN+G) → priority {state_score}"
+                    )
+                else:
+                    # Truly unknown: no identity, needs face urgently
+                    state_score = self.config.priority_weight_unknown  # 50.0
             elif binding_state == "PENDING":
                 state_score = self.config.priority_weight_pending
             elif binding_state == "CONFIRMED_WEAK":

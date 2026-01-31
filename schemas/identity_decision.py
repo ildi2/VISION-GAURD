@@ -75,3 +75,14 @@ class IdentityDecision:
     source_auth_score: Optional[float] = None 
     source_auth_state: Optional[str] = None      # e.g. "REAL", "LIKELY_SPOOF", ...
     source_auth_reason: Optional[str] = None     # compact SourceAuth explanation
+
+    # ========================================================================
+    # CONTINUITY MODE EXTENSION (GPS-like identity persistence)
+    # ========================================================================
+    # id_source: Identity source indicator for continuity mode
+    #   "F" = Face-assigned (fresh face confirmation this frame)
+    #   "G" = GPS-carried (identity carried from previous frames via tracking)
+    #   "U" = Unknown (no face evidence, no continuity memory)
+    # This field enables scheduler priority logic (favor "U" for face processing)
+    # and UI markers ([F]/[G]/[U] visual indicators).
+    id_source: Optional[str] = None

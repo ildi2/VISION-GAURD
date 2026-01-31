@@ -78,16 +78,16 @@ from schemas import Frame, Tracklet
 from schemas.identity_decision import IdentityDecision
 
 # Biometric engines
-from face.route import FaceEngine
+from face.route import FaceRoute
 from gait_subsystem.gait.gait_engine import GaitEngine
 from source_auth.engine import SourceAuthEngine
 
 # Chimeric fusion (Phase 3A + 3B)
-from chimeric_identity.fusion_engine import ChimericFusionEngine
-from chimeric_identity.types import ChimericDecision, ChimericState
+from chimeric_identity.simple_fusion import SimpleFusionEngine, FusionResult, FusionState, FaceInput, GaitInput
 
 # Perception (tracking)
-from perception.tracker_ocsort import OCSort
+from perception.tracker_ocsort import OCSortTracker
+from perception.detector import Detector, Detection
 
 
 # ============================================================================
@@ -241,27 +241,30 @@ class Phase3CRunner:
         # ====================================================================
         # STEP 3: Initialize perception (tracking)
         # ====================================================================
+        logger.info("[PERCEPTION] Initializing YOLO detector...")
+        self.detector = Detector()  # Auto-loads model in __init__
+        
         logger.info("[PERCEPTION] Initializing OC-SORT tracker...")
-        self.tracker = OCSort()
+        self.tracker = OCSortTracker()
         self.active_tracks: Dict[int, Dict] = {}
         
         # ====================================================================
         # STEP 4: Initialize biometric engines
         # ====================================================================
         logger.info("[FACE] Initializing face engine...")
-        self.face_engine = FaceEngine(self.config, device=self.device)
+        self.face_engine = FaceRoute()  # Uses default config internally
         
         logger.info("[GAIT] Initializing gait engine...")
-        self.gait_engine = GaitEngine(self.config, device=self.device)
+        self.gait_engine = GaitEngine()  # Uses default config internally
         
         logger.info("[SOURCEAUTH] Initializing source auth engine...")
-        self.sourceauth_engine = SourceAuthEngine(self.config, device=self.device)
+        self.sourceauth_engine = SourceAuthEngine()  # Uses default config internally
         
         # ====================================================================
         # STEP 5: Initialize Chimeric fusion (Phase 3A + 3B)
         # ====================================================================
         logger.info("[CHIMERIC] Initializing fusion engine (Phase 3A + 3B)...")
-        self.chimeric = ChimericFusionEngine()
+        self.chimeric = SimpleFusionEngine()
         
         logger.info("[PHASE3C] ✓ All systems initialized successfully")
     
@@ -333,12 +336,23 @@ class Phase3CRunner:
                     break
                 
                 # ============================================================
+                # OPTIONAL VISUALIZATION (show every frame)
+                # ============================================================
+                if show_output:
+                    should_continue = self._visualize_frame(frame, self.active_tracks)
+                    if not should_continue:
+                        logger.info("[PHASE3C] User closed window")
+                        break
+                
+                # ============================================================
                 # PERCEPTION - OC-SORT TRACKING
                 # ============================================================
                 try:
                     # Run YOLO detection
                     detections = self._detect_persons(frame)
                     if detections is None or len(detections) == 0:
+                        if frame_count % 30 == 0:  # Log every second
+                            logger.debug(f"[DETECTION] No persons detected in frame {frame_count}")
                         continue
                     
                     # OC-SORT tracking
@@ -418,12 +432,33 @@ class Phase3CRunner:
                         # Build evidence for fusion
                         evidence = self._build_evidence(track_id, track_data, frame_time)
                         
+                        # Convert evidence to FaceInput/GaitInput format
+                        face_input = None
+                        if 'face' in evidence:
+                            face_dec = evidence['face']
+                            face_input = FaceInput(
+                                identity_id=getattr(face_dec, 'identity_id', None),
+                                confidence=getattr(face_dec, 'confidence', 0.0),
+                                quality=getattr(face_dec, 'quality', 0.0),
+                                bbox=bbox if bbox else None
+                            )
+                        
+                        gait_input = None
+                        if 'gait' in evidence:
+                            gait_dec = evidence['gait']
+                            gait_input = GaitInput(
+                                identity_id=getattr(gait_dec, 'identity_id', None),
+                                confidence=getattr(gait_dec, 'confidence', 0.0),
+                                quality=getattr(gait_dec, 'quality', 0.0),
+                                confirm_streak=getattr(gait_dec, 'confirm_streak', 0)
+                            )
+                        
                         # Fuse all evidence through chimeric engine
                         chimeric_decision = self.chimeric.fuse(
                             track_id=track_id,
-                            face_evidence=evidence.get('face'),
-                            gait_evidence=evidence.get('gait'),
-                            frame_timestamp=frame_time
+                            face_input=face_input,
+                            gait_input=gait_input,
+                            timestamp=frame_time
                         )
                         
                         if chimeric_decision:
@@ -453,12 +488,6 @@ class Phase3CRunner:
                     self.metrics.total_runtime_sec = elapsed
                     self.metrics.frames_per_second = frame_count / elapsed if elapsed > 0 else 0
                 
-                # ============================================================
-                # OPTIONAL VISUALIZATION
-                # ============================================================
-                if show_output:
-                    self._visualize_frame(frame, self.active_tracks)
-                
                 # Log progress
                 if frame_count % 100 == 0:
                     logger.info(f"[PROGRESS] Frame {frame_count} | Tracks: {len(self.active_tracks)} | "
@@ -473,11 +502,19 @@ class Phase3CRunner:
             self.metrics.print_summary()
     
     def _detect_persons(self, frame: np.ndarray) -> Optional[np.ndarray]:
-        """Run YOLO person detection (simplified for Phase 3C)."""
+        """Run YOLO person detection."""
         try:
-            # This would use actual YOLO - for now mock
-            # Real implementation would run YOLOv8 and extract detections
-            return None  # Placeholder
+            detections = self.detector.detect(frame)
+            if not detections:
+                return None
+            
+            # Convert Detection objects to numpy array format for OC-SORT
+            # OC-SORT expects: [[x1, y1, x2, y2, confidence], ...]
+            det_array = np.array([
+                [d.bbox[0], d.bbox[1], d.bbox[2], d.bbox[3], d.confidence]
+                for d in detections
+            ])
+            return det_array
         except Exception as e:
             logger.error(f"[DETECTION] Error: {e}")
             return None
@@ -498,13 +535,13 @@ class Phase3CRunner:
         
         return evidence
     
-    def _update_metrics(self, decision: ChimericDecision, track_id: int):
+    def _update_metrics(self, decision: FusionResult, track_id: int):
         """Update metrics from chimeric decision."""
         self.metrics.total_decisions += 1
         
-        if decision.state == ChimericState.CONFIRMED:
+        if decision.state == FusionState.FUSED:
             self.metrics.confirmed_decisions += 1
-        elif decision.state == ChimericState.TENTATIVE:
+        elif decision.state == FusionState.FACE_ONLY or decision.state == FusionState.GAIT_ONLY:
             self.metrics.tentative_decisions += 1
     
     def _cleanup_stale_tracks(self, frame_time: float, timeout_sec: float = 10.0):
@@ -515,7 +552,7 @@ class Phase3CRunner:
         ]
         
         for track_id in stale_ids:
-            self.chimeric.cleanup_stale_tracks({tid for tid in self.active_tracks if tid != track_id})
+            # Remove from active tracks
             del self.active_tracks[track_id]
     
     def _visualize_frame(self, frame: np.ndarray, tracks: Dict):

@@ -1,0 +1,76 @@
+# scripts/rollout/stage2_strict.yaml
+# PHASE 9 - STAGE 2: Strict Guards (Week 2)
+# Enable real continuity mode with stricter thresholds for safety
+# Duration: 1 week
+# Risk: Low (conservative thresholds minimize false carries)
+
+chimeric:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  # STAGE 2: Real mode with strict guards
+  mode: "continuity"  # REAL MODE (GPS carry enabled)
+  
+  continuity:
+    # Real mode (shadow_mode=false means full mutations)
+    shadow_mode: false
+    
+    # Metrics logging (normal frequency)
+    shadow_metrics_log_interval_sec: 30
+    
+    # ============================================================
+    # GUARD 1: Track Stability (STRICTER)
+    # ============================================================
+    min_track_age_frames: 15  # Stricter (vs 10 production)
+    # Rationale: Older tracks more stable, reduces risk of carrying new tracker errors
+    
+    # ============================================================
+    # GUARD 2c: Track Health (STRICTER)
+    # ============================================================
+    min_track_confidence: 0.5  # Stricter (vs 0.3 production)
+    max_lost_frames: 1  # Stricter (vs 5 production)
+    # Rationale: Only carry high-confidence, actively-tracked persons
+    
+    # ============================================================
+    # GUARD 2: Appearance Consistency (STRICTER)
+    # ============================================================
+    appearance_distance_threshold: 0.30  # Stricter (vs 0.35 production)
+    # Rationale: Tighter embedding match reduces false carries
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    # ============================================================
+    # GUARD 2b: BBox Stability (STRICTER)
+    # ============================================================
+    max_bbox_displacement_fraction: 0.20  # Stricter (vs 0.25 production)
+    max_bbox_displacement_px: 500  # Stricter (vs 600 production)
+    bbox_iou_threshold: 0.4  # Stricter (vs 0.3 production)
+    # Rationale: Smaller allowed movements prevent teleport carries
+    
+    # ============================================================
+    # GUARD 3: Face Consistency (STRICTER)
+    # ============================================================
+    max_face_contradiction_count: 2  # Stricter (vs 3 production)
+    # Rationale: Break continuity faster on face disagreement
+    
+    # ============================================================
+    # GRACE REATTACHMENT (DISABLED in Stage 2)
+    # ============================================================
+    grace_window_seconds: 0.0  # DISABLED (enable in Stage 4)
+    # Rationale: Focus on core carry stability before adding reattachment complexity
+
+# Monitoring objectives for Stage 2:
+# 1. Validate real mode safety:
+#    - False carry rate <1% (wrong person carried)
+#    - No system instability (crashes, hangs, memory leaks)
+#    - Performance acceptable (<5% FPS degradation)
+#
+# 2. Collect operational metrics:
+#    - Identity persistence rate (how often carry succeeds)
+#    - Guard break reasons (appearance, bbox, health)
+#    - User feedback (operators notice reduced flicker?)
+#
+# 3. Success criteria:
+#    - Zero critical incidents (wrong identity carries)
+#    - System stable for 1 week continuous operation
+#    - Metrics show continuity working as expected
+#    - Ready to relax guards (Stage 3)

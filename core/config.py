@@ -235,6 +235,32 @@ class GovernanceConfig:
 
 
 @dataclass
+class ContinuityConfig:
+    """Chimeric continuity mode configuration (GPS-like identity persistence)"""
+    min_track_age_frames: int = 10
+    min_track_confidence: float = 0.3
+    max_lost_frames: int = 5
+    appearance_distance_threshold: float = 0.35
+    appearance_safe_zone_frames: int = 30
+    appearance_ema_alpha: float = 0.1
+    max_bbox_displacement_fraction: float = 0.25
+    max_bbox_displacement_px: int = 600
+    bbox_iou_threshold: float = 0.3
+    max_face_contradiction_count: int = 3
+    grace_window_seconds: float = 1.0
+    grace_bbox_displacement_fraction: float = 0.25
+    shadow_mode: bool = False
+    shadow_metrics_log_interval_sec: float = 30.0
+
+
+@dataclass
+class ChimericConfig:
+    """Chimeric identity mode configuration (classic vs continuity)"""
+    mode: str = "classic"  # Options: "classic", "shadow_continuity", "continuity"
+    continuity: ContinuityConfig = field(default_factory=ContinuityConfig)
+
+
+@dataclass
 class Config:
     camera: CameraConfig
     paths: PathsConfig
@@ -244,6 +270,8 @@ class Config:
     identity: IdentityRuntimeConfig = field(default_factory=IdentityRuntimeConfig)
     # NEW: governance section (Phases A-E)
     governance: GovernanceConfig = field(default_factory=GovernanceConfig)
+    # NEW: chimeric section (continuity mode)
+    chimeric: ChimericConfig = field(default_factory=ChimericConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +319,7 @@ def load_config(path: str | Path = "config/default.yaml") -> Config:
     ui_data = raw.get("ui", {}) or {}
     identity_data = raw.get("identity", {}) or {}
     governance_data = raw.get("governance", {}) or {}
+    chimeric_data = raw.get("chimeric", {}) or {}
 
     camera = _update_dataclass_from_dict(CameraConfig(), cam_data)
     paths = _update_dataclass_from_dict(PathsConfig(), paths_data)
@@ -300,6 +329,9 @@ def load_config(path: str | Path = "config/default.yaml") -> Config:
     
     # Parse governance nested sections
     governance = _parse_governance_config(governance_data)
+    
+    # Parse chimeric nested sections
+    chimeric = _parse_chimeric_config(chimeric_data)
 
     cfg = Config(
         camera=camera,
@@ -308,6 +340,7 @@ def load_config(path: str | Path = "config/default.yaml") -> Config:
         ui=ui,
         identity=identity,
         governance=governance,
+        chimeric=chimeric,
     )
 
     logger.info(
@@ -428,3 +461,56 @@ def _parse_governance_config(data: Dict[str, Any]) -> GovernanceConfig:
     
     gov.enabled = data.get("enabled", gov.enabled)
     return gov
+
+def _parse_chimeric_config(data: Dict[str, Any]) -> ChimericConfig:
+    """
+    Parse chimeric continuity mode configuration from YAML dict.
+    
+    Handles nested continuity section with safe defaults.
+    """
+    chimeric = ChimericConfig()
+    
+    # Top-level mode
+    chimeric.mode = data.get("mode", chimeric.mode)
+    
+    # Parse continuity sub-section
+    if "continuity" in data:
+        continuity_data = data["continuity"] or {}
+        cont = chimeric.continuity
+        
+        # Guard 1: Track stability
+        cont.min_track_age_frames = continuity_data.get("min_track_age_frames", cont.min_track_age_frames)
+        
+        # Guard 2c: Track health
+        cont.min_track_confidence = continuity_data.get("min_track_confidence", cont.min_track_confidence)
+        cont.max_lost_frames = continuity_data.get("max_lost_frames", cont.max_lost_frames)
+        
+        # Guard 2: Appearance consistency
+        cont.appearance_distance_threshold = continuity_data.get("appearance_distance_threshold", 
+                                                                   cont.appearance_distance_threshold)
+        cont.appearance_safe_zone_frames = continuity_data.get("appearance_safe_zone_frames", 
+                                                                 cont.appearance_safe_zone_frames)
+        cont.appearance_ema_alpha = continuity_data.get("appearance_ema_alpha", cont.appearance_ema_alpha)
+        
+        # Guard 2b: BBox stability
+        cont.max_bbox_displacement_fraction = continuity_data.get("max_bbox_displacement_fraction", 
+                                                                    cont.max_bbox_displacement_fraction)
+        cont.max_bbox_displacement_px = continuity_data.get("max_bbox_displacement_px", 
+                                                              cont.max_bbox_displacement_px)
+        cont.bbox_iou_threshold = continuity_data.get("bbox_iou_threshold", cont.bbox_iou_threshold)
+        
+        # Guard 3: Face consistency
+        cont.max_face_contradiction_count = continuity_data.get("max_face_contradiction_count", 
+                                                                  cont.max_face_contradiction_count)
+        
+        # Grace reattachment
+        cont.grace_window_seconds = continuity_data.get("grace_window_seconds", cont.grace_window_seconds)
+        cont.grace_bbox_displacement_fraction = continuity_data.get("grace_bbox_displacement_fraction", 
+                                                                      cont.grace_bbox_displacement_fraction)
+        
+        # Shadow mode
+        cont.shadow_mode = continuity_data.get("shadow_mode", cont.shadow_mode)
+        cont.shadow_metrics_log_interval_sec = continuity_data.get("shadow_metrics_log_interval_sec", 
+                                                                     cont.shadow_metrics_log_interval_sec)
+    
+    return chimeric

@@ -174,6 +174,46 @@ def _build_decision_map(
     return by_track
 
 
+def _extract_id_source(decision: Optional[IdentityDecision]) -> str:
+    """
+    Extract id_source from IdentityDecision (Phase 7 - Continuity Mode).
+    
+    Returns:
+        "F" = Face-assigned (identity from face recognition)
+        "G" = GPS-carried (identity from continuity memory)
+        "U" = Unknown (no identity)
+    
+    Extraction Strategy:
+        1. Try decision.id_source field (Phase 2 schema extension)
+        2. Fall back to decision.extra['id_source'] (backwards compatibility)
+        3. Default to "U" if neither exists
+    
+    Phase 7 Integration:
+        This enables [F]/[G]/[U] markers in UI overlay to show
+        identity source to operators.
+    """
+    if decision is None:
+        return "U"
+    
+    # Try schema field first (Phase 2 extension)
+    if hasattr(decision, 'id_source') and decision.id_source is not None:
+        source = str(decision.id_source)
+        if source in ("F", "G", "U"):
+            return source
+    
+    # Fall back to extra dict (backwards compatibility)
+    if hasattr(decision, 'extra') and decision.extra:
+        try:
+            source = decision.extra.get('id_source')
+            if source in ("F", "G", "U"):
+                return str(source)
+        except (AttributeError, TypeError):
+            pass
+    
+    # Default to unknown
+    return "U"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LAYER 4A: CONSENSUS IDENTITY RENDERING
 # ─────────────────────────────────────────────────────────────────────────────
@@ -292,42 +332,69 @@ def _identity_label(
     
     # FIX 5: Binding state emoji (with fallback to ASCII for unsupported terminals)
     # Try to use Unicode emoji; fallback to ASCII if encoding fails
+    # ROBUSTNESS: Handle ALL possible binding states from identity engine
     binding_emoji = ""
     try:
         if binding_state == "CONFIRMED_STRONG" or binding_state == "CONFIRMED_WEAK":
             binding_emoji = "✓"  # Checkmark for confirmed
+        elif binding_state == "GPS_CARRY":
+            binding_emoji = "⚐"  # Flag for GPS carry (identity persisted via tracking)
         elif binding_state == "PENDING" or binding_state == "SWITCH_PENDING":
             binding_emoji = "⧕"  # Hourglass for pending
-        elif binding_state == "UNKNOWN":
-            binding_emoji = "◯"  # Circle for unknown
+        elif binding_state in ("UNKNOWN", "BYPASS", "STALE", "ERROR"):
+            binding_emoji = "◯"  # Circle for unknown/unconfirmed states
         else:
-            binding_emoji = "?"  # Unknown state
+            binding_emoji = "?"  # Truly unknown state (shouldn't happen)
     except Exception:
         # Fallback to ASCII if emoji encoding fails
         if binding_state == "CONFIRMED_STRONG" or binding_state == "CONFIRMED_WEAK":
             binding_emoji = "[Y]"
+        elif binding_state == "GPS_CARRY":
+            binding_emoji = "[C]"  # Carried
         elif binding_state == "PENDING" or binding_state == "SWITCH_PENDING":
             binding_emoji = "[~]"
-        elif binding_state == "UNKNOWN":
+        elif binding_state in ("UNKNOWN", "BYPASS", "STALE", "ERROR"):
             binding_emoji = "[?]"
         else:
             binding_emoji = "[!]"
 
+    # Phase 7: Extract id_source for continuity mode visualization
+    id_source = _extract_id_source(decision)
+    
+    # Phase 7: Build source marker [F]/[G]/[U]
+    source_marker = ""
+    if id_source == "F":
+        source_marker = "[F]"  # Face-assigned (green intent)
+    elif id_source == "G":
+        source_marker = "[G]"  # GPS-carried (cyan intent)
+    elif id_source == "U":
+        source_marker = "[U]"  # Unknown (gray intent)
+    
     conf = getattr(decision, "confidence", None)
     if conf is None:
         main_label = name
         if binding_emoji:
             main_label = f"{binding_emoji} {name}"
+        # Phase 7: Append source marker
+        if source_marker:
+            main_label = f"{main_label} {source_marker}"
     else:
         try:
             c = max(0.0, min(float(conf), 1.0))
         except Exception:
             c = 0.0
         # FIX 5: Show binding emoji with confidence
+        # Phase 7: Append source marker after confidence
         if binding_emoji:
-            main_label = f"{binding_emoji} {name} ({c:.2f})"
+            if source_marker:
+                main_label = f"{binding_emoji} {name} {source_marker} ({c:.2f})"
+            else:
+                main_label = f"{binding_emoji} {name} ({c:.2f})"
         else:
-            main_label = f"{name} ({c:.2f})"
+            if source_marker:
+                main_label = f"{name} {source_marker} ({c:.2f})"
+            else:
+                main_label = f"{name} ({c:.2f})"
 
     reason = getattr(decision, "reason", "") or ""
     if len(reason) > 48:
@@ -372,17 +439,20 @@ def _identity_label(
         dbg = (dbg + " " + tag_str).strip() if dbg else tag_str
 
     # FIX 5: Color-code by binding state
-    # Green for confirmed, orange for pending, gray for unknown
+    # Green for confirmed, orange for pending, gray for unknown, cyan for GPS carry
+    # ROBUSTNESS FIX: Handle None binding_state same as UNKNOWN
     base_color = _category_color(getattr(decision, "category", "unknown") or "unknown")
     
     if binding_state in ["CONFIRMED_STRONG", "CONFIRMED_WEAK"]:
         color = (0, 255, 0)  # Green for confirmed
+    elif binding_state == "GPS_CARRY":
+        color = (255, 255, 0)  # Cyan for GPS carry (identity via tracking)
     elif binding_state in ["PENDING", "SWITCH_PENDING"]:
         color = (0, 165, 255)  # Orange for pending
-    elif binding_state == "UNKNOWN":
-        color = (128, 128, 128)  # Gray for unknown
+    elif binding_state in ["UNKNOWN", "BYPASS", "STALE", "ERROR"] or binding_state is None:
+        color = (128, 128, 128)  # Gray for unknown/unconfirmed states
     else:
-        color = base_color  # Use default category color
+        color = base_color  # Use default category color for any other state
     
     return main_label, dbg, color
 
@@ -730,6 +800,55 @@ def draw_overlay(
                     (200, 200, 200),
                     1,
                 )
+        
+        # Phase 7.2: Optional continuity debug overlay (GPS-carried tracks)
+        show_continuity_debug = _get_ui_flag(ui_cfg, "show_continuity_debug", False)
+        if show_continuity_debug and decision is not None:
+            id_source = _extract_id_source(decision)
+            if id_source == "G":  # Only show for GPS-carried tracks
+                # Extract track diagnostics (age, lost frames, confidence)
+                age_frames = getattr(trk, "age_frames", 0)
+                lost_frames = getattr(trk, "lost_frames", 0)
+                track_conf = getattr(trk, "confidence", 0.0)
+                
+                try:
+                    age_frames = int(age_frames)
+                    lost_frames = int(lost_frames)
+                    track_conf = float(track_conf)
+                except (ValueError, TypeError):
+                    age_frames = 0
+                    lost_frames = 0
+                    track_conf = 0.0
+                
+                # Build continuity debug line
+                cont_debug = f"GPS: age={age_frames} lost={lost_frames} conf={track_conf:.2f}"
+                
+                # Position below main label (or below face debug line if shown)
+                if show_debug_face_hud and dbg_line:
+                    cont_y = dbg_y + dh + 6
+                else:
+                    cont_y = label_y + th + 6
+                
+                if cont_y < h - 5:
+                    (cw, ch), cb = cv2.getTextSize(
+                        cont_debug, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1
+                    )
+                    cv2.rectangle(
+                        img,
+                        (label_x - 2, cont_y - ch - cb),
+                        (label_x + cw + 2, cont_y + cb),
+                        (0, 0, 0),
+                        thickness=-1,
+                    )
+                    cv2.putText(
+                        img,
+                        cont_debug,
+                        (label_x, cont_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        (0, 255, 255),  # Cyan for GPS-carried
+                        1,
+                    )
 
     # (Events/alerts icons / badges can be added in a later Wave)
     return img

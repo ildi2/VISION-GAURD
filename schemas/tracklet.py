@@ -83,3 +83,12 @@ class Tracklet:
     
     # Gait recognition confidence
     gait_confidence: Optional[float] = None
+
+    # =========================================================================
+    # FACE RE-IDENTIFICATION FIELDS (continuity mode support)
+    # =========================================================================
+    # Face embedding vector for person re-identification (512-D InsightFace)
+    # Populated by face identity engine when high-quality face detected.
+    # Used by continuity binder for appearance consistency guard (GPS mode).
+    # L2-normalized by face engine (cosine distance = 1 - dot product).
+    embedding: Optional[np.ndarray] = None

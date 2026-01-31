@@ -1,0 +1,100 @@
+# scripts/rollout/stage5_production.yaml
+# PHASE 9 - STAGE 5: Full Production (Ongoing)
+# Final production configuration with all features enabled and tuned
+# Duration: Ongoing (permanent production state)
+# Risk: Low (validated through Stages 1-4)
+
+chimeric:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  # STAGE 5: Full production mode
+  mode: "continuity"  # REAL MODE (production configuration)
+  
+  continuity:
+    # Production mode
+    shadow_mode: false
+    
+    # Metrics logging (production frequency)
+    shadow_metrics_log_interval_sec: 60  # Less frequent (every minute)
+    
+    # ============================================================
+    # GUARD 1: Track Stability
+    # ============================================================
+    min_track_age_frames: 10  # Production tuned value
+    
+    # ============================================================
+    # GUARD 2c: Track Health
+    # ============================================================
+    min_track_confidence: 0.3  # Production tuned value
+    max_lost_frames: 5  # Production tuned value
+    
+    # ============================================================
+    # GUARD 2: Appearance Consistency
+    # ============================================================
+    appearance_distance_threshold: 0.35  # Production tuned value
+    # NOTE: May be adjusted based on Stage 1-4 observations
+    # - Tighter (0.30) if false carries observed
+    # - Looser (0.40) if too many guard breaks with correct person
+    
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    # ============================================================
+    # GUARD 2b: BBox Stability
+    # ============================================================
+    max_bbox_displacement_fraction: 0.25  # Production tuned value
+    max_bbox_displacement_px: 600  # Production tuned value
+    bbox_iou_threshold: 0.3  # Production tuned value
+    # NOTE: May be adjusted based on camera placement and crowd density
+    # - Indoor, static cameras: can be stricter (0.20 fraction)
+    # - Outdoor, moving crowds: may need looser (0.30 fraction)
+    
+    # ============================================================
+    # GUARD 3: Face Consistency
+    # ============================================================
+    max_face_contradiction_count: 3  # Production tuned value
+    
+    # ============================================================
+    # GRACE REATTACHMENT
+    # ============================================================
+    grace_window_seconds: 1.0  # Production tuned value
+    # NOTE: May be adjusted based on occlusion patterns
+    # - Brief occlusions (person behind pillar): 1.0s sufficient
+    # - Longer occlusions (person enters store): may increase to 2.0s
+    
+    grace_bbox_displacement_fraction: 0.25  # Same as Guard 2b
+
+# Production monitoring (ongoing):
+# 1. Continuous metrics collection:
+#    - Identity persistence rate (target ≥95%)
+#    - False carry rate (target <1%)
+#    - Grace reattachment success (target ≥80%)
+#    - System performance (target <5% FPS degradation)
+#
+# 2. Anomaly detection:
+#    - Alert on sudden metric changes (>20% deviation)
+#    - Alert on error rate increase
+#    - Alert on memory growth (grace pool size)
+#
+# 3. Periodic review (monthly):
+#    - Review guard break distribution
+#    - Tune thresholds if needed
+#    - Validate metrics still meet targets
+#
+# 4. Rollback readiness:
+#    - Keep stage2_strict.yaml available for quick rollback
+#    - Keep classic mode available for emergency disable
+#    - Document rollback procedures in operations runbook
+
+# Environment-specific tuning notes:
+# - Indoor, controlled lighting: Can use tighter thresholds
+# - Outdoor, variable lighting: May need looser appearance threshold
+# - High crowd density: May need looser bbox threshold
+# - Low crowd density: Can use tighter bbox threshold
+# - Multi-camera deployment: Tune per-camera if needed
+
+# Success criteria for production:
+# - All quantitative metrics met (persistence, false carry, reattachment)
+# - Operator feedback positive (prefer continuity over classic)
+# - No stability issues (crashes, memory leaks, performance degradation)
+# - Metrics stable over time (no drift or degradation)
