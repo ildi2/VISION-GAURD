@@ -1,0 +1,378 @@
+
+camera:
+  index: 0
+  width: 640
+  height: 480
+  fps: 30
+
+paths:
+  models_dir: "models"
+  logs_dir: "logs"
+  evidence_dir: "evidence"
+
+tracker:
+  max_age: 30
+  min_hits: 3
+  iou_threshold: 0.2
+  appearance_lambda: 0.4
+  ema_alpha: 0.7
+
+runtime:
+  use_gpu: true
+  save_evidence: false
+  log_face_metrics: true
+  metrics_window_sec: 5.0
+
+  use_multiview_engine: true
+
+ui:
+  show_identity_labels: true
+  show_debug_face_hud: true
+  show_fps: true
+
+  show_engine_tag: true
+  show_pose_tag: true
+
+face:
+  dim: 512
+  metric: "cosine"
+
+  min_quality_enroll: 0.55
+
+  min_quality_for_embed: 0.55
+
+  min_quality_runtime: 0.55
+
+  min_samples_confirm: 3
+  min_samples_switch: 4
+  evidence_lookback_sec: 2.0
+
+  strong_match_dist: 0.85
+  weak_match_dist: 0.93
+
+  route:
+    lookback_seconds: 2.0
+    max_entries_per_track: 30
+    process_every_n_frames: 5
+    min_interval_ms: 150
+
+  smoothing:
+    half_life_sec: 2.0
+    stale_after_sec: 6.0
+    min_confidence: 0.05
+    min_samples_confirm: 3
+    min_samples_switch: 4
+    evidence_lookback_sec: 2.0
+
+  multiview:
+    yaw_front_deg: 15.0 
+
+    yaw_side_max_deg: 70.0
+
+    pitch_up_deg: 17.0
+    pitch_down_deg: -25.0
+
+    max_roll_deg: 35.0
+    max_templates_per_bin: 10
+    num_canonical_bins: 6
+    unknown_only_is_zero_coverage: true 
+
+identity:
+  mode: "multiview"
+
+governance:
+  enabled: true
+  
+  evidence_gate:
+    enabled: true
+    description: "Accept/Hold/Reject faces based on quality + binding state"
+    
+    thresholds:
+      unknown_min_quality: 0.55
+      unknown_min_size_px: 80
+      unknown_min_margin: 0.15
+      
+      confirmed_min_quality: 0.55
+      confirmed_min_margin: 0.08
+      
+      max_yaw_unknown: 40
+      max_yaw_confirmed: 60
+      
+      min_brightness_normalized: 0.2
+      max_brightness_normalized: 0.9
+      
+      min_blur_score: 200
+    
+    accept_ratio_target: 0.85
+    hold_ratio_target: 0.10
+    reject_ratio_target: 0.05
+    
+    log_reasons: true
+    log_level: "DEBUG"
+  
+  binding:
+    enabled: true
+    description: "Persistent identity state machine with margin + anti-flip logic"
+    
+    confirmation:
+      min_samples_strong: 1
+      min_samples_weak: 3
+      window_seconds: 3.0
+      min_avg_score: 0.45
+      min_avg_margin: 0.02
+      min_quality_for_strong: 0.40
+    
+    switching:
+      min_sustained_samples: 4
+      margin_advantage: 0.12
+      window_seconds: 2.0
+    
+    contradiction:
+      threshold: 0.15
+      counter_max: 5
+      downgrade_factor: 0.8
+      window_seconds: 5.0
+    
+    stale_threshold_sec: 8.0
+    stale_recovery_samples_needed: 2
+  
+  scheduler:
+    enabled: true
+    description: "Distribute face compute fairly when GPU is bottleneck"
+    
+    budget_policy: "adaptive"
+    
+    fixed_budget_per_frame: 10
+    
+    fps_high: 15.0
+    fps_medium: 5.0
+    fps_low: 3.0
+    
+    priority_weights:
+      pending: 80.0
+      unknown: 50.0
+      confirmed_weak: 20.0
+      confirmed_strong: 10.0
+    
+    min_check_interval_sec: 0.5
+    time_decay_rate: 20.0
+    
+    min_budget: 1
+    max_budget_ratio: 0.95
+
+  source_auth:
+    enabled: false
+    description: "Real head vs phone/screen detection (disabled for efficiency)"
+
+  merge:
+    enabled: true
+    description: "Reduce ghost duplicates by merging track fragments (evidence-based aliasing)"
+    
+    thresholds:
+      merge_confidence_min: 60
+      
+      tentative_threshold: 40
+      
+      hold_threshold: 40
+    
+    temporal:
+      min_gap_seconds: 0.3
+      
+      max_gap_seconds: 5.0
+    
+    spatial:
+      max_distance_pixels: 150
+      
+      velocity_influence: 20
+    
+    appearance:
+      max_embedding_distance: 0.35
+      
+      hard_reject_embedding_distance: 0.5
+      
+      quality_min_samples: 2
+    
+    motion:
+      velocity_similarity_min: 0.6
+      
+      velocity_magnitude_threshold: 0.1
+    
+    binding:
+      allow_different_identities: false
+      
+      confidence_required_for_diff: 0.95
+    
+    stability:
+      max_merges_per_canonical: 5
+      
+      merge_reversal_window: 5.0
+      
+      min_time_between_merges: 2.0
+      
+      inactive_tracklet_retention_seconds: 10.0
+    
+    binding_multipliers:
+      confirmed_strong: 1.2
+      
+      confirmed_weak: 1.1
+      
+      pending: 1.0
+      
+      unknown: 1.0
+    
+    merge_strategy:
+      mode: "conservative"
+      
+      check_frequency: "sparse"
+      check_frames: 10
+    
+    logging:
+      log_merge_reasons: true
+      
+      log_reversal_reasons: true
+      
+      debug_mode: false
+      
+      log_level: "INFO"
+  
+  debug:
+    description: "Enable detailed logging and UI displays for analysis"
+    
+    evidence_gate_decisions: true
+    binding_state_transitions: true
+    merge_attempts: true
+    scheduler_selections: true
+    
+    ui:
+      show_binding_state: true
+      show_evidence_gate_reason: true
+      show_merge_alias: true
+      show_scheduler_budget: false
+      show_contradiction_counter: false
+    
+    emit_metrics_every_sec: 1.0
+    log_level: "INFO"
+
+vision_identity:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  mode: "continuity"
+  
+  continuity:
+    min_track_age_frames: 10
+    
+    min_track_confidence: 0.3
+    max_lost_frames: 5
+    
+    appearance_distance_threshold: 0.35
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    max_bbox_displacement_fraction: 0.25
+    max_bbox_displacement_px: 600
+    bbox_iou_threshold: 0.3
+    
+    max_face_contradiction_count: 3
+    
+    grace_window_seconds: 1.0
+    grace_bbox_displacement_fraction: 0.25
+    
+    shadow_mode: false
+    shadow_metrics_log_interval_sec: 30
+
+privacy:
+  enabled: true
+  
+  redaction_style: "silhouette"
+
+  silhouette_cleanup: false
+  
+  delay_sec: 3.0
+  
+  output:
+    dir: "privacy_output"
+    basename: "privacy_stream"
+    codec: "mp4v"
+    container: "mp4"
+    fps: 30
+  
+  policy:
+    grace_sec: 5.0
+    
+    reacquire_sec: 10.0
+    
+    unlock_allowed: false
+    
+    authorized_categories:
+      - "resident"
+    
+    require_confirmed_binding: true
+  
+  audit:
+    enabled: true
+    filename: "privacy_audit.jsonl"
+    flush_interval_sec: 1.0
+  
+  ui:
+    show_privacy_preview: true
+    preview_window_title: "Privacy Output (Delayed)"
+    show_preview_watermark: true
+  
+  segmentation:
+    enabled: true
+    
+    backend: "yolo_seg"
+    
+    model_path: ""
+    
+    imgsz: 640
+    
+    conf: 0.35
+    
+    iou_threshold: 0.5
+    
+    iou_assoc_min: 0.25
+    
+    run_every_n_frames: 1
+    
+    min_mask_area_ratio: 0.01
+    max_mask_area_ratio: 5.0
+    min_mask_quality: 0.3
+    
+    dilate_mask_px: 3
+    
+    device: "auto"
+  
+  stabilization:
+    enabled: true
+    
+    method: "union_only"
+    
+    history_size: 5
+    
+    mask_ttl_sec: 0.75
+    
+    max_shrink_ratio: 0.85
+    
+    morph_close_px: 3
+    
+    morph_open_px: 0
+
+  metrics:
+    enabled: true
+    
+    log_path: "privacy_output/privacy_metrics.jsonl"
+    
+    flush_interval_sec: 1.0
+    
+    leakage_enabled: true
+    leakage_backend: "opencv_haar"
+    haar_scale_factor: 1.1
+    haar_min_neighbors: 5
+    overlap_threshold: 0.2
+    
+    flicker_enabled: true
+    
+    timing_enabled: true
+    
+    utility_enabled: true

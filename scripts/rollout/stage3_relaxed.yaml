@@ -1,0 +1,28 @@
+
+vision_identity:
+  description: "GPS-like identity continuity (face assigns, tracking carries)"
+  
+  mode: "continuity"
+  
+  continuity:
+    shadow_mode: false
+    
+    shadow_metrics_log_interval_sec: 30
+    
+    min_track_age_frames: 10
+    
+    min_track_confidence: 0.3
+    max_lost_frames: 5
+    
+    appearance_distance_threshold: 0.35
+    appearance_safe_zone_frames: 30
+    appearance_ema_alpha: 0.1
+    
+    max_bbox_displacement_fraction: 0.25
+    max_bbox_displacement_px: 600
+    bbox_iou_threshold: 0.3
+    
+    max_face_contradiction_count: 3
+    
+    grace_window_seconds: 0.0
+

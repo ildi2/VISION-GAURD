@@ -1,0 +1,86 @@
+# ===========================================
+# GaitGuard / Vision_HSP - .gitignore
+# ===========================================
+
+# -------------------- Python --------------------
+# Virtual environments
+.venv*/
+venv/
+env/
+.env/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# -------------------- IDE / Editor --------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -------------------- OS Generated --------------------
+Thumbs.db
+.DS_Store
+Desktop.ini
+ehthumbs.db
+
+# -------------------- Private Data (CRITICAL) --------------------
+# Biometric galleries - contains personal embeddings
+**/face_gallery.enc
+**/gait_gallery.pkl
+**/identity_registry.json
+data/face_gallery.enc
+data/gait_gallery.pkl
+data/identity_registry.json
+motion_analysis/data/
+
+# Personal videos & images
+data/gait_videos/
+data/watchlist_raw/
+
+# -------------------- Large Model Files --------------------
+# YOLO & InsightFace models (download separately)
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# -------------------- Runtime / Logs --------------------
+logs/
+config/logs/
+*.log
+
+# -------------------- Local Configuration --------------------
+config/local.yaml
+config/*.local.yaml
+
+# -------------------- Temporary / Build Files --------------------
+*.tmp
+*.bak
+*.cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# -------------------- Keep Structure --------------------
+# Keep empty data directories (use .gitkeep)
+!data/.gitkeep
+!logs/.gitkeep
+
+# -------------------- Documentation --------------------
+# Exclude root markdown files except README
+*.md
+!README.md
+!docs/**/*.md
+!vision_identity/*.md
+
